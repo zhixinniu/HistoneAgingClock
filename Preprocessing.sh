@@ -24,4 +24,3 @@ mkdir QC_report_post_trimming
 mkdir Clean_reads
 trim_galore -q 20 --phred33 --length 15 -e 0.1 --stringency 4 --cores 8 --fastqc --fastqc_args "-t 30 -o QC_report_post_trimming" -o Clean_reads *.fq.gz ## trim and filter reads.
 multiqc --outdir QC_report_post_trimming QC_report_post_trimming ## generate QC summary for clean reads.
-
