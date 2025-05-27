@@ -1,8 +1,3 @@
----
-editor_options: 
-  markdown: 
-    wrap: sentence
----
 
 # HistoneAgingClock
 
@@ -14,4 +9,3 @@ This repository contains code related to the manuscript *"Histone Modification C
 **Peakcalling.sh**: Calls peaks using MACS2 and identifies super enhancers with HOMER.\
 **Consensus_peakset.R**: Identifies consensus peak sets across samples.\
 **Modeling.R**: Tunes hyperparameters and builds an elastic net regression model for biological age prediction.
-xdd
