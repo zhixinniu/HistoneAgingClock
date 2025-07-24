@@ -1,23 +1,31 @@
-# Download Bowtie2 index for UCSC hg19
+##### Download Bowtie2 index for UCSC hg19
 wget https://genome-idx.s3.amazonaws.com/bt/hg19.zip
 unzip hg19.zip
 
-# Create the output directory of alignment files
-mkdir Alignment  ## data/Alignment
 
-# Define function
+
+##### Create the output directory of alignment files
+mkdir Alignment  # data/Alignment
+
+
+
+###### Define function
+# alignment of single-end data
 function align_chip(){
   INDEX=${1}
   FASTQ=${2}
   PREFIX=$(basename ${2})
   PREFIX=${PREFIX%%_*}
-  bowtie2 -p 1 -x ${INDEX} -U ${FASTQ} -S Alignment/${PREFIX}.sam  ## change "-p" to use more cores as desire.
+  # change "-p" to use more cores as desire.
+  bowtie2 -p 1 -x ${INDEX} -U ${FASTQ} -S Alignment/${PREFIX}.sam  
   samtools view -@ 1 -h -F 268 -bS Alignment/${PREFIX}.sam > Alignment/${PREFIX}.unique_alignment.bam  ## change "-@" to use more cores as desire.
   samtools sort -o Alignment/${PREFIX}.unique_alignment_sorted.bam -@ 1 Alignment/${PREFIX}.unique_alignment.bam
   samtools rmdup Alignment/${PREFIX}.unique_alignment_sorted.bam Alignment/${PREFIX}.unique_alignment_sorted_rd.bam
   samtools index Alignment/${PREFIX}.unique_alignment_sorted_rd.bam
-}  ## Function for alignment
+} 
 
+# calculate NRF and PBC
+# specify "SE" or "PE" based on your data type at first place.
 function calc_PBC_NRF(){
   if [ -z $1 ];then
     echo "Please specify the library layout of the input file: SE or PE?"
@@ -47,31 +55,48 @@ function calc_PBC_NRF(){
 }  ##  Calulate PBC and NRF
 
 
-# Alignment
-ls Clean_reads/*.fq.gz|while read i
-do
-  ## define the path to bowtie2 index, FASTQ file, and the prefix of output files.
-  ## delete "&" if you don't want to put all progress into background.
-  align_chip hg19/hg19 $i &
-done
+
+##### Alignment
+# define the path to bowtie2 index, FASTQ file, and the prefix of output files.
+# 
+# Input: 
+# cleaned fastq files
+# 
+# Output: 
+# alignment files in sam and bam format (.sam and .bam)
+# sorted alignment bam file (.sorted.bam)
+# duplicates removed bam file (.rd.bam)
+# index of bam file
+
+align_chip hg19/hg19 ${clean}.fq.gz
 
 
-# PBC1, PBC2, and NRF calculation
+
+
+##### PBC1, PBC2, and NRF calculation
+# Input:
+# .rd.bam
+# 
+# Output:
+# calculated NRF and PBC file (NRF_PBC.txt)
+
 mkdir QC_report_post_alignment
 echo -e "sample\tNRF\tPBC1\tPBC2" > QC_report_post_alignment/NRF_PBC.txt
-ls Alignment/*rd.bam|while read i
-do
-  calc_PBC_NRF SE $i >> QC_report_post_alignment/NRF_PBC.txt
-done
+calc_PBC_NRF SE ${aligned}.bam >> QC_report_post_alignment/NRF_PBC.txt
 
 
-# Calculate RSC and NSC by phantompeakqualtools
+
+
+###### Calculate RSC and NSC by phantompeakqualtools
 # find run_spp.R in https://github.com/kundajelab/phantompeakqualtools.git
-ls Alignment/*sorted.bam|while read i
-do
-  Rscript run_spp.R -c=${i} -p=30 -out=QC_report_post_alignment/NSC_RSC.txt
-done
+# Input:
+# .sorted.bam file
+# 
+# Output:
+# calculated NSC and RSC file (NSC_RSC.txt)
+
+Rscript run_spp.R -c=${aligned}.bam -p=30 -out=QC_report_post_alignment/NSC_RSC.txt
 sed -i '1i Filename\tnumReads\testFragLen\tcorr_estFragLen\tphantomPeak\tcorr_phantomPeak\targmin_corr\tmin_corr\tNSC\tRSC\tQualityTag' QC_report_post_alignment/NSC_RSC.txt
 
 
-# Please see the additional creteria of quality control, e.g. FRiP, in the R script "Post_alignment_QC.R"
+###### Please see the additional creteria of quality control, e.g. FRiP, in the R script "Post_alignment_QC.R"

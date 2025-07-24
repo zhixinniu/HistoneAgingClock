@@ -9,15 +9,24 @@ library(ggplot2)
 library(glmnet)
 library(glmnetUtils)
 library(Metrics)
+library(sva)
+library(factoextra)
+library(FactoMineR)
 
 
 
 
-# Calculate signal value of each consensus peak
+##### Calculate signal value of each consensus peak
+# Input:
+# consensus peakset
+# metadata for TCseq
+# Ouput:
+# TCseq TCA object with calculated and normalized counts table
+
 final_consensus_peak_set <- read.table('data/peakcalling/final_consensus_peak_set.bed',header = F)
 final_consensus_peak_set$id <- paste0('peak_',1:nrow(final_consensus_peak_set))
 colnames(final_consensus_peak_set)[1:3] <- c('chr','start','end')
-path_to_bam <- normalizePath('data/Alignment/')  # Path to alignment BAM file.
+path_to_bam <- normalizePath('.data/Alignment/')  # Path to alignment BAM file.
 design <- data.frame(sampleid=chip_metadata$IP,
                      timepoint=paste0('year_',chip_metadata$Age),
                      group=chip_metadata%>%
@@ -26,7 +35,7 @@ design <- data.frame(sampleid=chip_metadata$IP,
                        pull(),
                      BAMfile=paste0(chip_metadata$IP,'.unique_alignment_sorted_rd.bam'))  # Create design information for TCseq.
 tca <- TCA(design = design,genomicFeature = final_consensus_peak_set)
-register(MulticoreParam(workers = 10))  # The number of cores used. High RAM usage for large BAM files.
+register(MulticoreParam(workers = 1))  # The number of cores used. High RAM usage for large BAM files.
 tca <- TCseq::countReads(tca, dir = path_to_bam)  # Count reads for each peak.
 tca <- DBanalysis(tca)
 tca <- timecourseTable(tca,value = 'expression',filter = F,norm.method = 'rpkm')
@@ -34,7 +43,42 @@ chip_all_signal <- TCseq::counts(tca,normalization='rpkm',log=T)  # Get counts t
 
 
 
-# Identify age-correlated peaks
+
+
+##### Remove batch effect
+# Input:
+# normalized signal value
+# Output:
+# Batch effect-corrected signal value
+
+chip_metadata <- read.table('data/metadata.tsv',sep = '\t',header = T)
+batch_metadata <- chip_metadata
+rownames(batch_metadata) <- paste0(batch_metadata$IP,'.unique_alignment_sorted.bam')
+batch_metadata <- batch_metadata[,-c(1:2),drop=F]
+
+
+signal_combat_corrected <- ComBat(dat = chip_all_signal,
+                                  batch = batch_metadata$Lab,
+                                  mod = model.matrix(~batch_metadata$Age,data = meta),
+                                  par.prior = T,
+                                  prior.plots = F)
+
+pca_res <- PCA(t(signal_combat_corrected),scale.unit = T,graph = F)
+fviz_pca_ind(pca_res,
+             geom.ind = "point",  
+             col.ind = batch_metadata$Lab,  
+             palette = "jco",     
+             addEllipses = F,  
+             legend.title = "Project")
+
+
+
+
+##### Identify age-correlated peaks
+# Input:
+# signal value table
+# Output
+# table of potentially age-associated peaks
 cor_peak_ident <- function(tca.obj){
   tcTable <- as.data.frame(tca.obj@tcTable)
   tcTable$id <- rownames(tcTable)
@@ -48,8 +92,8 @@ cor_peak_ident <- function(tca.obj){
       return(data.frame(peak=df[1,'id'],
                         pval=cor.res$p.value,
                         estimate=unname(cor.res$estimate),
-                        alternative=ifelse(cor.res$estimate >= 0.5 & cor.res$p.value <= 0.05,'greater',
-                                           ifelse(cor.res$estimate <= -0.5 & cor.res$p.value <= 0.05,'less','none'))))
+                        regulation=ifelse(cor.res$estimate >= 0.5 'greater',
+                                           ifelse(cor.res$estimate <= -0.5,'less','none'))))
     })%>%
     do.call(rbind,.)
   return(corTable)
@@ -71,7 +115,14 @@ ggplot(chip_cor_peak,aes(x=estimate))+
   labs(x="Spearman's r", y='Number of age-correlated peaks') # Visualize the distribution of age-correlated peaks.
 
 
-# Modeling
+
+
+##### Modeling
+# Input:
+# corrected signal table
+# Output:
+# elastic-net regression model
+
 # Define training and test datasets, e.g. 70% for training and 30% for test.
 get_model_params <- function(fit) {
   alpha <- fit$alpha
