@@ -15,7 +15,7 @@ function align_chip(){
   INDEX=${1}
   FASTQ=${2}
   PREFIX=$(basename ${2})
-  PREFIX=${PREFIX%%_*}
+  PREFIX=${PREFIX%%.*}
   # change "-p" to use more cores as desire.
   bowtie2 -p 1 -x ${INDEX} -U ${FASTQ} -S Alignment/${PREFIX}.sam  
   samtools view -@ 1 -h -F 268 -bS Alignment/${PREFIX}.sam > Alignment/${PREFIX}.unique_alignment.bam  ## change "-@" to use more cores as desire.
