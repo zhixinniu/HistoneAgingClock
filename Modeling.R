@@ -164,3 +164,59 @@ ggplot(predictions,aes(x=real.age,y=predicted.age))+
 
 
 
+
+##### Estimation of sample saturation
+# This script performs a sample-size saturation analysis for histone modification–based aging clock models.
+# Inspired by the MEDIPS saturation framework, it evaluates how model prediction accuracy (RMSE, MAE, Pearson's r)
+# scales with increasing sample size and assesses performance stabiligy using sampling and artificial duplication
+
+# Input: 
+# training dataset
+# Output:
+# RMSE (or MAE, Pearson's r) vs. sample size curve
+# Estimated saturationg curve
+
+
+saturation_sample_size <- lapply(seq(0.1,1,0.01), function(i){       # evaluate performance metrics for sub-samp
+  prop <- i # proportion of training datasets
+  nit <- # iteration number of sampling
+  
+  train <- lapply(1:nit, function(x){
+    idx <- sample(seq_len(nrow(chip_all_signal.sub.train)), size=floor(prop*nrow(chip_all_signal.sub.train)))
+    chip_all_signal.sub.train[idx,]
+  })
+  
+  print(paste0('loop of ',prop))
+  
+  res.list <- lapply(train, function(x){
+    cv.fit <- cva.glmnet(x,as.numeric(rownames(x)),alpha = seq(0.1,0.9,0.1))
+    lambda <- unname(hp[1,2])
+    alpha <- unname(hp[1,1])
+    
+    fit <- glmnet(x,as.numeric(rownames(x)),family = 'gaussian',alpha = alpha, nlambda = 100)
+    pred <- predict(fit, chip_all_signal.sub.test, type = 'response',s=lambda)
+    pred <- as.data.frame(pred)
+    pred <- data.frame('predicted.age'=as.numeric(pred$s1),
+                       'real.age'=as.numeric(rownames(pred)))
+    mae <- mae(pred$real.age, pred$predicted.age)
+    rmse <- rmse(pred$real.age, pred$predicted.age)
+    r <- cor(pred$real.age, pred$predicted.age,method = 'pearson')
+    
+    res.df <- data.frame(group=paste0('prop_',prop),
+                         prop=prop,
+                         r=r,
+                         rmse=rmse,
+                         mae=mae)=mae)
+    return(res.df)
+    
+  })
+  
+  res.list <- as.data.frame(rbindlist(res.list))return(res.list)
+})
+
+saturation_sample_size.df <- do.call(rbind, saturation_sample_size)
+
+
+
+
+
