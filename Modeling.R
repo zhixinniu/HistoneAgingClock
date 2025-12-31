@@ -219,7 +219,12 @@ train_and_metrics <- function(training, test, nit, hp){       # evaluate perform
 }
 
 
+# Duplication of dataset
+samples_dup <- rbind(chip_all_signal.sub.train,chip_all_signal.sub.train)
 
+# Sub-sampling
+idx <- sample(nrow(samples_dup))
 
-
+sample_A <- samples_dup[idx[1:nrow(samples_dup)/2],]
+sample_B <- samples_dup[idx[(nrow(samples_dup)/2+1):nrow(samples_dup],]
 
