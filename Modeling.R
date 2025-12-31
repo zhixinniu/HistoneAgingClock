@@ -177,19 +177,19 @@ ggplot(predictions,aes(x=real.age,y=predicted.age))+
 # Estimated saturationg curve
 
 
-saturation_sample_size <- lapply(seq(0.1,1,0.01), function(i){       # evaluate performance metrics for sub-samp
+train_and_metrics <- function(training, test, nit, hp){       # evaluate performance metrics for sub-samp
+  lapply(seq(0.1,1,0.01), function(i){       
   prop <- i # proportion of training datasets
-  nit <- # iteration number of sampling
+  nit <- nit # iteration number of sampling
   
   train <- lapply(1:nit, function(x){
-    idx <- sample(seq_len(nrow(chip_all_signal.sub.train)), size=floor(prop*nrow(chip_all_signal.sub.train)))
+    idx <- sample(seq_len(nrow(training)), size=floor(prop*nrow(training)))
     chip_all_signal.sub.train[idx,]
   })
   
-  print(paste0('loop of ',prop))
-  
   res.list <- lapply(train, function(x){
     cv.fit <- cva.glmnet(x,as.numeric(rownames(x)),alpha = seq(0.1,0.9,0.1))
+    hp <- get_model_params(cv.fit)
     lambda <- unname(hp[1,2])
     alpha <- unname(hp[1,1])
     
@@ -206,15 +206,18 @@ saturation_sample_size <- lapply(seq(0.1,1,0.01), function(i){       # evaluate 
                          prop=prop,
                          r=r,
                          rmse=rmse,
-                         mae=mae)=mae)
+                         mae=mae)
     return(res.df)
     
   })
   
-  res.list <- as.data.frame(rbindlist(res.list))return(res.list)
+  res.list <- as.data.frame(rbindlist(res.list))
+  return(res.list)
 })
+  saturation_sample_size.df <- do.call(rbind, res.list)
+  return(saturation_sample_size.df)
+}
 
-saturation_sample_size.df <- do.call(rbind, saturation_sample_size)
 
 
 
