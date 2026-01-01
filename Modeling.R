@@ -177,7 +177,7 @@ ggplot(predictions,aes(x=real.age,y=predicted.age))+
 # Estimated saturationg curve
 
 
-train_and_metrics <- function(training, test, nit, hp){       # evaluate performance metrics for sub-samp
+train_and_metrics <- function(training, test, nit){       # evaluate performance metrics for sub-samp
   lapply(seq(0.1,1,0.01), function(i){       
   prop <- i # proportion of training datasets
   nit <- nit # iteration number of sampling
@@ -194,7 +194,7 @@ train_and_metrics <- function(training, test, nit, hp){       # evaluate perform
     alpha <- unname(hp[1,1])
     
     fit <- glmnet(x,as.numeric(rownames(x)),family = 'gaussian',alpha = alpha, nlambda = 100)
-    pred <- predict(fit, chip_all_signal.sub.test, type = 'response',s=lambda)
+    pred <- predict(fit, test, type = 'response',s=lambda)
     pred <- as.data.frame(pred)
     pred <- data.frame('predicted.age'=as.numeric(pred$s1),
                        'real.age'=as.numeric(rownames(pred)))
@@ -225,6 +225,34 @@ samples_dup <- rbind(chip_all_signal.sub.train,chip_all_signal.sub.train)
 # Sub-sampling
 idx <- sample(nrow(samples_dup))
 
-sample_A <- samples_dup[idx[1:nrow(samples_dup)/2],]
-sample_B <- samples_dup[idx[(nrow(samples_dup)/2+1):nrow(samples_dup],]
+sample_A <- samples_dup[idx[1:round(nrow(samples_dup)/2)],]
+sample_B <- samples_dup[idx[(round(nrow(samples_dup))/2+1):nrow(samples_dup],]
 
+# Calculate metrics for different sample sizes
+metrics_prop <- train_and_metrics(chip_all_signal.sub.train, chip_all_signal.sub.test,5)
+metrics_A <- train_and_metrics(sample_A, chip_all_signal.sub.test, 5)
+metrics_B <- train_and_metrics(sample_B, chip_all_signal.sub.test, 5)
+                                                                                                                        
+# Combine metrics for sample_A and sample_B
+metrics_est <- cbind(metrics_A, metrics_B)
+colnames(metrics_est) <- c('groupA','rA','rmseA','maeA','propA','groupB','rB','rmseB','maeB')
+metrics_est$sample_size <- metrics_est$prop *2
+metrics_est$rmse_comb <- rowMeans(metrics_est[,c('rmseA','rmseB')])
+metrics_est$mae_comb <- rowMeans(metrics_est[,c('maeA','maeB')])
+metrics_est$r_comb <- rowMeans(metrics_est[,c('rA','rB')])
+                                                                
+results <- data.frame(sample_size = c(metrics_prop$prop, metrics_est$sample_size),
+                      mae = c(metrics_prop$mae, metrics_est$mae_comb),
+                      rmse = c(metrics_prop$rmse, metrics_est$rmse_comb),
+                      r = c(metrics_prop$r, metrics_est$r_comb),
+                      group = c(rep('Saturation',nrow(metrics_prop)), rep('Estimated saturation',nrow(metrics_est))))
+
+ggplot(results, aes(x=sample_size, y=mae, group=group, color=group))+
+  geom_smooth(span=1)
+ggplot(results, aes(x=sample_size, y=rmse, group=group, color=group))+
+  geom_smooth(span=1)
+ggplot(results, aes(x=sample_size, y=r, group=group, color=group))+
+  geom_smooth(span=1)                                                                
+                                                           
+
+                                                                
