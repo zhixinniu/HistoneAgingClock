@@ -398,7 +398,11 @@ train_and_metrics <- function(training, test, nit){       # evaluate performance
   return(saturation_sample_size.df)
 }
 
+
+
+
 # Artificially duplicate training dataset to estimate asymptotic performance
+chip_all_signal.sub.train <- chip_all_signal.sub.train[sample(1:nrow(chip_all_signal.sub.train),round(nrow(chip_all_signal.sub.train)/2),]
 samples_dup <- rbind(chip_all_signal.sub.train,chip_all_signal.sub.train)
 
 
