@@ -324,132 +324,130 @@ ggplot(predictions,aes(x=real.age,y=predicted.age))+
 # - chip_all_signal.sub.test: independent test dataset
 #
 # Output:
-# - Performance metrics (RMSE, MAE, r) across sample sizes
+# - Pearson's r of two independant datasets across sample sizes
 # - Observed saturation curve and estimated saturation curve
 
+# Randomly get ID of datasets
+id_origin <- nrow(chip_all_signal.sub.train)
+id_origin <- sample(id_origin)
+id_A <- id_origin[1:floor(length(id_origin)/2)]
+id_B <- id_origin[-id_A]
+
+id_origin <- 1:nrow(chip_all_signal.sub.train)
+id_doubled <- sample(c(id_origin,id_origin))
+id_A_doubled <- id_doubled[1:floor(length(id_doubled)/2)]
+id_B_doubled <- id_doubled[-id_A_doubled]
 
 
-# Helper function: train_and_metrics
-# For a given training and test dataset, repeatedly subsample the training
-# data at different proportions, train elastic-net models, and evaluate
-# prediction performance on the test set.
+# Calculate Pearson's r of the prediction results of two independant datasets 
+saturation_ori <- lapply(seq(10,length(id_A),1), function(x){
+  sample_size <- x
 
-train_and_metrics <- function(training, test, nit){       # evaluate performance metrics for sub-samp
+  train <- lapply(1:5, function(x){
+    train_A <- chip_all_signal.sub.train[sample(id_A,sample_size),]
+    train_B <- chip_all_signal.sub.train[sample(id_B,sample_size),]
 
-  # Loop over training set proportions from 10% to 100%
-  lapply(seq(0.1,1,0.01), function(i){       
-
-    prop <- i        # proportion of training dataset used
-    nit <- nit       # number of repeated subsampling iterations
-  
-    # Generate multiple subsampled training sets at the given proportion
-    train <- lapply(1:nit, function(x){
-      idx <- sample(seq_len(nrow(training)), size=floor(prop*nrow(training)))
-      chip_all_signal.sub.train[idx,]
-    })
-  
-    # For each subsampled dataset, train and evaluate a model
-    res.list <- lapply(train, function(x){
-
-      # Perform cross-validation to select elastic-net hyperparameters
-      cv.fit <- cva.glmnet(x,as.numeric(rownames(x)),alpha = seq(0.1,0.9,0.1))
-      hp <- get_model_params(cv.fit)
-
-      # Extract optimal lambda and alpha
-      lambda <- unname(hp[1,2])
-      alpha <- unname(hp[1,1])
-    
-      # Fit elastic-net model using selected hyperparameters
-      fit <- glmnet(x,as.numeric(rownames(x)),
-                    family = 'gaussian',
-                    alpha = alpha,
-                    nlambda = 100)
-
-      # Predict age on the independent test dataset
-      pred <- predict(fit, test, type = 'response', s=lambda)
-      pred <- as.data.frame(pred)
-
-      # Organize prediction results
-      pred <- data.frame('predicted.age'=as.numeric(pred$s1),
-                         'real.age'=as.numeric(rownames(pred)))
-
-      # Compute prediction performance metrics
-      mae <- mae(pred$real.age, pred$predicted.age)
-      rmse <- rmse(pred$real.age, pred$predicted.age)
-      r <- cor(pred$real.age, pred$predicted.age,method = 'pearson')
-    
-      # Store metrics together with the sampling proportion
-      res.df <- data.frame(group=paste0('prop_',prop),
-                           prop=prop,
-                           r=r,
-                           rmse=rmse,
-                           mae=mae)
-      return(res.df)
-    
-    })
-  
-    # Combine results from repeated subsampling iterations
-    res.list <- as.data.frame(rbindlist(res.list))
-    return(res.list)
+    return(list(train_A = train_A,
+                train_B = train_B))
   })
-  
-  # Aggregate results across all sampling proportions
-  saturation_sample_size.df <- do.call(rbind, res.list)
-  return(saturation_sample_size.df)
-}
+
+  print(sample_size)
+
+  res.list <- lapply(train, function(x){
+    ## train_A
+    cv.fit <- cva.glmnet(x$train_A,as.numeric(rownames(x$train_A)),alpha = seq(0.1,0.9,0.1))
+    lambda <- unname(get_model_params(cv.fit)[1,2])
+    alpha <- unname(get_model_params(cv.fit)[1,1])
+    fit <- glmnet(x$train_A,as.numeric(rownames(x$train_A)),family = 'gaussian',alpha = alpha, nlambda = 100)
+    pred_train_A <- predict(fit, chip_all_signal.sub.test, type = 'response',s=lambda)
+    pred_train_A <- as.data.frame(pred_train_A)
+    pred_train_A <- data.frame('predicted.age'=as.numeric(pred_train_A$s1),
+                               'real.age'=as.numeric(blood_k27ac_env$blood_k27ac_test.dat$age))
+    ## train_B
+    cv.fit <- cva.glmnet(x$train_B,as.numeric(rownames(x$train_B)),alpha = seq(0.1,0.9,0.1))
+    lambda <- unname(get_model_params(cv.fit)[1,2])
+    alpha <- unname(get_model_params(cv.fit)[1,1])
+    fit <- glmnet(x$train_B,as.numeric(rownames(x$train_B)),family = 'gaussian',alpha = alpha, nlambda = 100)
+    pred_train_B <- predict(fit, blood_k27ac_env$blood_k27ac_test.rpkm, type = 'response',s=lambda)
+    pred_train_B <- as.data.frame(pred_train_B)
+    pred_train_B <- data.frame('predicted.age'=as.numeric(pred_train_B$s1),
+                               'real.age'=as.numeric(rownames(blood_k27ac_test.rpkm)))
+    ## train res
+    r_train <- cor(pred_train_A$predicted.age, pred_train_B$predicted.age)
+
+    res.df <- data.frame(group=paste0('prop_',prop),
+                         sample_size = c(sample_size),
+                         r=c(r_train),
+                         type = 'saturation')
+    return(res.df)
+    })
+
+  res.list <- as.data.frame(rbindlist(res.list))
+
+  return(res.list)
+
+})
+
+saturation_ori.df <- do.call(rbind,saturation_ori)
 
 
 
+# Calculate Pearson's r of the prediction results of two doubled independant datasets 
+saturation_est <- lapply(seq(10,length(id_A_doubled),20), function(x){
+  sample_size <- x
 
-# Artificially duplicate training dataset to estimate asymptotic performance
-chip_all_signal.sub.train <- chip_all_signal.sub.train[sample(1:nrow(chip_all_signal.sub.train),round(nrow(chip_all_signal.sub.train)/2),]
-samples_dup <- rbind(chip_all_signal.sub.train,chip_all_signal.sub.train)
+  train <- lapply(1:5, function(x){
+    est_A <- chip_all_signal.sub.train[sample(id_A_doubled,sample_size),]
+    est_B <- chip_all_signal.sub.train[sample(id_B_doubled,sample_size),]
+
+    return(list(est_A = est_A,
+                est_B = est_B))
+  })
+
+  print(sample_size)
+
+  res.list <- lapply(train, function(x){
+    ## est_A
+    cv.fit <- cva.glmnet(x$est_A,as.numeric(rownames(x$est_A)),alpha = seq(0.1,0.9,0.1))
+    lambda <- unname(get_model_params(cv.fit)[1,2])
+    alpha <- unname(get_model_params(cv.fit)[1,1])
+    fit <- glmnet(x$est_A,as.numeric(rownames(x$est_A)),family = 'gaussian',alpha = alpha, nlambda = 100)
+    pred_est_A <- predict(fit, chip_all_signal.sub.test, type = 'response',s=lambda)
+    pred_est_A <- as.data.frame(pred_est_A)
+    pred_est_A <- data.frame('predicted.age'=as.numeric(pred_est_A$s1),
+                             'real.age'=as.numeric(blood_k27ac_env$blood_k27ac_test.dat$age))
+    ## est_B
+    cv.fit <- cva.glmnet(x$est_B,as.numeric(rownames(x$est_B)),alpha = seq(0.1,0.9,0.1))
+    lambda <- unname(get_model_params(cv.fit)[1,2])
+    alpha <- unname(get_model_params(cv.fit)[1,1])
+    fit <- glmnet(x$est_B,as.numeric(rownames(x$est_B)),family = 'gaussian',alpha = alpha, nlambda = 100)
+    pred_est_B <- predict(fit, blood_k27ac_env$blood_k27ac_test.rpkm, type = 'response',s=lambda)
+    pred_est_B <- as.data.frame(pred_est_B)
+    pred_est_B <- data.frame('predicted.age'=as.numeric(pred_est_B$s1),
+                             'real.age'=as.numeric(rownames(blood_k27ac_test.rpkm)))
+    ## train res
+    r_est <- cor(pred_est_A$predicted.age, pred_est_B$predicted.age)
+
+    res.df <- data.frame(group=paste0('prop_',prop),
+                         sample_size = c(sample_size),
+                         r=c(r_est),
+                         type = 'Estimated_saturation')
+    return(res.df)
+  })
+
+  res.list <- as.data.frame(rbindlist(res.list))
+
+  return(res.list)
+
+})
+
+saturation_est.df <- do.call(rbind,saturation_est)
+
+# Merge final results
+saturation_all.df <- rbind(saturation_est.df,saturation_ori.df)
+
+# Plot Pearson's r
+ggplot(saturation_all.df, aes(x=sample_size, y=r,color=type, group=type))+
+  geom_smooth(span=1,se=F)
 
 
-# Randomly split duplicated data into two independent subsets
-idx <- sample(nrow(samples_dup))
-
-sample_A <- samples_dup[idx[1:round(nrow(samples_dup)/2)],]
-sample_B <- samples_dup[idx[(round(nrow(samples_dup))/2+1):nrow(samples_dup],]
-
-                                                                
-# Saturation analysis on original and duplicated datasets
-metrics_prop <- train_and_metrics(chip_all_signal.sub.train, chip_all_signal.sub.test,5)
-metrics_A <- train_and_metrics(sample_A, chip_all_signal.sub.test, 5)
-metrics_B <- train_and_metrics(sample_B, chip_all_signal.sub.test, 5)
-
-                                                                
-# Merge performance metrics from duplicated subsets and compute
-metrics_est <- cbind(metrics_A, metrics_B)
-colnames(metrics_est) <- c('groupA','rA','rmseA','maeA','propA',
-                           'groupB','rB','rmseB','maeB')
-
-# Convert proportion to effective sample size (due to duplication)
-metrics_est$sample_size <- metrics_est$prop *2
-
-# Average performance metrics between duplicated subsets
-metrics_est$rmse_comb <- rowMeans(metrics_est[,c('rmseA','rmseB')])
-metrics_est$mae_comb <- rowMeans(metrics_est[,c('maeA','maeB')])
-metrics_est$r_comb <- rowMeans(metrics_est[,c('rA','rB')])
-
-
-# Combine observed and estimated saturation results
-results <- data.frame(sample_size = c(metrics_prop$prop, metrics_est$sample_size),
-                      mae = c(metrics_prop$mae, metrics_est$mae_comb),
-                      rmse = c(metrics_prop$rmse, metrics_est$rmse_comb),
-                      r = c(metrics_prop$r, metrics_est$r_comb),
-                      group = c(rep('Saturation',nrow(metrics_prop)),
-                                rep('Estimated saturation',nrow(metrics_est))))
-
-
-# Visualize saturation curves
-ggplot(results, aes(x=sample_size, y=mae, group=group, color=group))+
-  geom_smooth(span=1)
-
-ggplot(results, aes(x=sample_size, y=rmse, group=group, color=group))+
-  geom_smooth(span=1)
-
-ggplot(results, aes(x=sample_size, y=r, group=group, color=group))+
-  geom_smooth(span=1)    
-
-                                                                
